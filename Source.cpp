@@ -3,32 +3,54 @@
 #include <sstream>
 #include <vector>
 #include <string>
+#include <algorithm>
 
 using namespace std;
 
-const int MAX_STUDENTS = 20;
+const int MAX_STUDENTS = 500;
 const int MAX_ADMINS = 10;
 
 // ---Classes---
+struct Course {
+	string courseCode;
+	string courseName;
+	float gpa;          // 0.0 to 4.0 scale
+	int creditHours;
+};
 struct Student {
-	string ID;
-	string first_name;
-	string second_name;
-	string email;
-	string password;
+	string ID, national_id, gender, first_name, second_name, email, phone, password, program;
+	vector<Course> courses;  // Each student's courses
 
-	// Constructor for easy initialization
-	Student(string id, string fname, string sname, string em, string pwd)
-		: ID(id), first_name(fname), second_name(sname), email(em), password(pwd) {
+	Student(string id, string nid, string g, string fn, string sn,string em, string ph, string pwd, string prgrm)
+		: ID(id), national_id(nid), gender(g), first_name(fn),
+		second_name(sn), email(em), phone(ph), password(pwd), program(prgrm) {
 	}
 
-	// Member function to display student info
-	void display()  {
-		cout << "ID: " << ID << "\nName: " << first_name << " "
-			<< second_name << "\nEmail: " << email << "\n\n";
+
+	void display() {
+		cout << "Student ID: " << ID << "\n"
+			<< "Name: " << first_name << " " << second_name << "\n"
+			<< "Program: " << program << "\n"
+			<< "Email: " << email << "\n"
+			<< "Phone Number: " << phone << '\n'
+			<< "Courses:\n";
+
+		for (const auto& course : courses) {
+			cout << "- " << course.courseCode << " (" << course.courseName << "): "
+				<< "GPA: " << course.gpa << ", Credits: " << course.creditHours << "\n";
+		}
+	}
+
+	float calculateOverallGPA() {
+		float totalPoints = 0;
+		int totalCredits = 0;
+		for (const auto& course : courses) {
+			totalPoints += course.gpa * course.creditHours;
+			totalCredits += course.creditHours;
+		}
+		return totalCredits > 0 ? totalPoints / totalCredits : 0.0f;
 	}
 };
-
 struct Admin {
 	string ID;
 	string first_name;
@@ -47,43 +69,76 @@ struct Admin {
 };
 
 //Loading files
-	vector<Student> loadStudentsFile(const string& filename) {
+vector<Student> loadStudentsFile(const string& filename) {
 	vector<Student> students;
 	ifstream file(filename);
 
 	if (!file.is_open()) {
-		cerr << "Error openning file ~" << filename << endl;
+		cerr << "Error opening file: " << filename << endl;
 		return students;
 	}
 
 	string line;
-	getline(file, line); // Skips the header row in the csv file
+	getline(file, line); // Skip header row
 
 	while (getline(file, line)) {
 		stringstream ss(line);
 		string token;
 		vector<string> tokens;
 
+		// Split line by commas
 		while (getline(ss, token, ',')) {
 			tokens.push_back(token);
 		}
-		if (tokens.size() == 5) {
-			students.emplace_back(
-				tokens[0], // ID
-				tokens[1], // first name
-				tokens[2], // second name
-				tokens[3], // email
-				tokens[4] // password
-			);
-		}
 
+		if (tokens.size() >= 9) {
+			// Construct Student with all basic info
+			Student student(
+				tokens[0], // ID
+				tokens[1], // national_id
+				tokens[2], // gender
+				tokens[3], // first_name
+				tokens[4], // second_name
+				tokens[5], // email
+				tokens[6], // phone
+				tokens[7],  // password
+				tokens[8] // program
+			);
+
+			// Load courses if they exist (9th column)
+			if (tokens.size() > 9 && !tokens[9].empty()) {
+				stringstream coursesStream(tokens[9]);
+				string courseEntry;
+
+				// Split course entries by semicolon
+				while (getline(coursesStream, courseEntry, ';')) {
+					stringstream courseStream(courseEntry);
+					string coursePart;
+					vector<string> courseParts;
+
+					// Split course details by colon
+					while (getline(courseStream, coursePart, ':')) {
+						courseParts.push_back(coursePart);
+					}
+
+					if (courseParts.size() == 4) {
+						Course course;
+						course.courseCode = courseParts[0];
+						course.courseName = courseParts[1];
+						course.gpa = stof(courseParts[2]);
+						course.creditHours = stoi(courseParts[3]);
+						student.courses.push_back(course);
+					}
+				}
+			}
+
+			students.push_back(student);
+		}
 	}
 	file.close();
-
 	return students;
 }
-
-	vector<Admin> loadAdminsFile(const string& filename) {
+vector<Admin> loadAdminsFile(const string& filename) {
 		vector<Admin> admins;
 		ifstream file(filename);
 
@@ -124,14 +179,20 @@ struct Admin {
 void mainPage(vector<Student>& students);
 void adminSignIn(vector<Admin>& admins, vector<Student>& students, string status);
 void studentSignIn(vector<Student>& students, string status);
-void studentPanel(vector<Student>& students, string status);
+void studentPanel(Student& student);
 bool adminPanel(vector<Admin>& admins,vector<Student>& students, string status);
+void saveStudentsToFile(vector<Student>& students, const string& filename);
+void viewStudentCourses(Student& student);
 
 
 
 // ---Admin Functions--- //
 bool searchStudent(vector<Student>& students);
 void addStudent(vector<Student>& students);
+bool deleteStudent(Student& student, vector<Student>& students);
+void modifyStudent(Student& student, vector<Student>& students);
+void addCourseToStudent(Student& student, vector<Student>& students, const string& filename);
+void manageCourses(Student& student, vector<Student>& students, const string& filename);
 
 //Main Program
 int main() {
@@ -166,22 +227,17 @@ int main() {
 	return 0;
 }
 
-void mainPage(vector<Student>& students) {
-	
-}
-
 void studentSignIn(vector<Student>& students, string status) {
 	while (true) {
-		string username;
+		string email;
 		string pass;
 
 		cout << "\n--- Student Sign In ---\n";
-		cout << "Enter your username (or '0' to go back): ";
-		cin >> username;
+		cout << "Enter your email (or '0' to go back): ";
+		cin >> email;
 
-		// Check if user wants to go back
-		if (username == "0") {
-			return; // Return to main menu
+		if (email == "0") {
+			return;
 		}
 
 		cout << "Enter your password: ";
@@ -189,11 +245,11 @@ void studentSignIn(vector<Student>& students, string status) {
 
 		bool loggedIn = false;
 		for (auto& student : students) {
-			if (student.first_name == username && student.password == pass) {
+			if (student.email == email && student.password == pass) {
 				loggedIn = true;
 				cout << "\nWelcome " << student.first_name << " " << student.second_name << endl;
-				studentPanel(students, status);
-				return; // Return after successful login and panel exit
+				studentPanel(student);  // Pass the specific student to the panel
+				return;
 			}
 		}
 
@@ -206,24 +262,23 @@ void studentSignIn(vector<Student>& students, string status) {
 			cin >> retryChoice;
 
 			if (retryChoice == 0) {
-				return; // Go back to main menu
+				return;
 			}
-			// Otherwise loop continues for another try
 		}
 	}
 }
 
 void adminSignIn(vector<Admin>& admins, vector<Student>& students, string status) {
 	while (true) {
-		string username;
+		string email;
 		string pass;
 
 		cout << "\n--- Admin Sign In ---\n";
-		cout << "Enter your username (or '0' to go back): ";
-		cin >> username;
+		cout << "Enter your email address (or '0' to go back): ";
+		cin >> email;
 
 		// Check if user wants to go back
-		if (username == "0") {
+		if (email == "0") {
 			return; // Return to main menu
 		}
 
@@ -232,16 +287,15 @@ void adminSignIn(vector<Admin>& admins, vector<Student>& students, string status
 
 		bool loggedIn = false;
 		for (auto& admin : admins) {
-			if (admin.first_name == username && admin.password == pass) {
+			if (admin.email == email && admin.password == pass) {
 				loggedIn = true;
 				cout << "\nWelcome " << admin.first_name << " " << admin.second_name << endl;
 				adminPanel(admins, students, status);
 				return; // Return after successful login and panel exit
 			}
 		}
-
 		if (!loggedIn) {
-			cout << "\nIncorrect username or password.\n";
+			cout << "\nIncorrect email addresss or password.\n";
 			cout << "1 -> Try again\n";
 			cout << "0 -> Go back\n";
 
@@ -256,29 +310,51 @@ void adminSignIn(vector<Admin>& admins, vector<Student>& students, string status
 	}
 }
 
-void studentPanel(vector<Student>& students, string status){
-	string username;
-	string pass;
-	cout << "Enter your username: "; cin >> username;
-	cout << "Enter your password: "; cin >> pass;
+void studentPanel(Student& student) {
+	while (true) {
+		cout << "\n=== STUDENT PANEL ===\n";
 
-	bool found = false;
+		cout << "1 -> View My Information\n";
+		cout << "2 -> View My Courses\n";
+		cout << "3 -> View My GPA\n";
+		cout << "0 -> Log Out\n";
+		cout << "Choice: ";
 
-	for (int i = 0; i < MAX_STUDENTS; i++) {
-		if (students[i].first_name == username) {
-			found = true;
-			if (students[i].password == pass) {
-				cout << "Access Granted!" << endl;
-				return;
-			}
-			else {
-				cout << "Password is incorrect.";
-			}
+		int choice;
+		cin >> choice;
 
+		switch (choice) {
+		case 1:  // View all information
+			cout << "\n--- STUDENT INFORMATION ---\n";
+			cout << "Student ID: " << student.ID << "\n";
+			cout << "Name: " << student.first_name << " " << student.second_name << '\n';
+			cout << "Program: " << student.program << '\n';
+			cout << "National ID: " << student.national_id << '\n';
+			cout << "Gender: " << student.gender << '\n';
+			cout << "Email: " << student.email << '\n';
+			cout << "Phone: " << student.phone << '\n';
+			break;
+
+		case 2:  // View courses
+			viewStudentCourses(student);
+			break;
+
+		case 3:  // View GPA
+			cout << "\nYour Overall GPA: " << student.calculateOverallGPA() << "\n";
+			break;
+
+		case 0:  // Log out
+			cout << "\nLogging out...\n";
+			return;
+
+		default:
+			cout << "Invalid choice! Please try again.\n";
 		}
-	}
 
-	
+		cout << "\nPress Enter to continue...";
+		cin.ignore();
+		cin.get();
+	}
 }
 
 bool adminPanel(vector<Admin>& admins, vector<Student>& students, string status) {
@@ -287,6 +363,7 @@ bool adminPanel(vector<Admin>& admins, vector<Student>& students, string status)
 		cout << "1 -> Display All Students\n";
 		cout << "2 -> Search Student\n";
 		cout << "3 -> Add New Student\n";
+
 		cout << "\n0 -> Log Out\n";
 		cout << "Enter your choice: ";
 
@@ -313,6 +390,7 @@ bool adminPanel(vector<Admin>& admins, vector<Student>& students, string status)
 		case 3:  // Add new student
 			addStudent(students); // Will handle its own back navigation
 			break;
+			
 
 		case 0:  // Log out
 			cout << "\nLogging out...\n";
@@ -332,125 +410,201 @@ bool adminPanel(vector<Admin>& admins, vector<Student>& students, string status)
 	}
 }
 
+// Admin Functions
 bool searchStudent(vector<Student>& students) {
-	while (true) {  // Main loop for the search menu
+	while (true) {
 		cout << "\n--- Search Student ---\n";
-		cout << "1 -> Search by ID\n";
-		cout << "2 -> Search by Name\n";
-		cout << "3 -> Search by Email\n";
-		cout << "\n0 -> Back to Admin Panel\n";
-		cout << "\nEnter your choice: ";
+		cout << "1. Search by ID\n";
+		cout << "2. Search by Name\n";
+		cout << "3. Search by Email\n";
+		cout << "0. Back to Admin Panel\n";
+		cout << "Choice: ";
 
 		int choice;
 		cin >> choice;
+		cin.ignore(); // Clear input buffer
 
-		if (choice == 0) {
-			return true;  // Signal to go back to admin panel
-		}
+		if (choice == 0) return true;
 
 		string searchTerm;
-		bool found = false;
+		vector<Student*> matches;
 
 		switch (choice) {
-		case 1:  // Search by ID
+		case 1: // Search by ID
 			cout << "Enter student ID: ";
-			cin >> searchTerm;
+			getline(cin, searchTerm);
 			for (auto& student : students) {
 				if (student.ID == searchTerm) {
-					found = true;
-					cout << "\n--- Student Found ---\n";
-					student.display();
+					matches.push_back(&student);
 				}
 			}
 			break;
 
-		case 2:  // Search by Name
-			cout << "Enter student first name: ";
-			cin >> searchTerm;
+		case 2: // Search by Name
+			cout << "Enter student name: ";
+			getline(cin, searchTerm);
 			for (auto& student : students) {
-				if (student.first_name == searchTerm) {
-					found = true;
-					cout << "\n--- Student Found ---\n";
-					student.display();
+				string fullName = student.first_name + " " + student.second_name;
+				if (fullName.find(searchTerm) != string::npos) {
+					matches.push_back(&student);
 				}
 			}
 			break;
 
-		case 3:  // Search by Email
+		case 3: // Search by Email
 			cout << "Enter student email: ";
-			cin >> searchTerm;
+			getline(cin, searchTerm);
 			for (auto& student : students) {
 				if (student.email == searchTerm) {
-					found = true;
-					cout << "\n--- Student Found ---\n";
-					student.display();
+					matches.push_back(&student);
 				}
 			}
 			break;
 
 		default:
-			cout << "Invalid choice! Please try again.\n";
-			continue;  // Skip the rest and show menu again
+			cout << "Invalid choice!\n";
+			continue;
 		}
 
-		if (!found && (choice >= 1 && choice <= 3)) {
-			cout << "No student found with matching criteria.\n";
+		if (matches.empty()) {
+			cout << "No matching students found.\n";
+			cout << "1. Search again\n";
+			cout << "0. Back to Admin Panel -->| |\n";
+
+			int retryChoice;
+			cin >> retryChoice;
+			if (retryChoice == 0) return true;
+			continue;
 		}
 
-		// After search results, give option to search again or go back
-		cout << "\n1 -> Search again\n";
-		cout << "0 -> Back to Admin Panel\n";
-		cout << "Enter your choice: ";
-
-		int continueChoice;
-		cin >> continueChoice;
-
-		if (continueChoice == 0) {
-			return true;  // Signal to go back to admin panel
+		// Display all matches
+		cout << "\n--- Search Results (" << matches.size() << ") ---\n";
+		for (size_t i = 0; i < matches.size(); i++) {
+			cout << "[" << i + 1 << "] ";
+			matches[i]->display();
+			cout << "-----------------\n";
 		}
+
+		// Student selection
+		cout << "\nSelect student (1-" << matches.size() << ") or 0 to search again: ";
+		int selection;
+		cin >> selection;
+		cin.ignore();
+
+		if (selection == 0) continue;
+		if (selection < 1 || selection > matches.size()) {
+			cout << "Invalid selection!\n";
+			continue;
+		}
+
+		Student* selectedStudent = matches[selection - 1];
+
+		// Action menu
+		while (true) {
+			cout << "\n--- Student Options ---\n";
+			selectedStudent->display();
+			cout << "\n1. Modify Student\n";
+			cout << "2. Delete Student\n";
+			cout << "3. Search Again\n";
+			cout << "4. Manage Courses\n";
+			cout << "0. Back to Admin Panel\n";
+			cout << "Choice: ";
+
+			int actionChoice;
+			cin >> actionChoice;
+			cin.ignore();
+
+			switch (actionChoice) {
+			case 1: // Modify
+				modifyStudent(*selectedStudent, students);
+				break;
+			case 2: // Delete
+				if (deleteStudent(*selectedStudent, students)) {
+					return true; // Return to admin panel after deletion
+				}
+				break;
+			case 3: // Search Again
+				goto search_again; // Break out to restart search
+			case 4:
+				manageCourses(*selectedStudent, students, "students.csv");
+				break;
+			case 0: // Back
+				return true;
+			default:
+				cout << "Invalid choice!\n";
+				continue;
+			}
+			break;
+		}
+
+	search_again:;
 	}
 }
 
-
-
 void addStudent(vector<Student>& students) {
-	while (true) {  // Main loop for retry capability
+	while (true) {
 		cout << "\n--- ADD NEW STUDENT ---\n";
 		cout << "(Enter '0' at any time to cancel)\n";
 
 		// 1. Get Input with Validation
-		string id, fname, sname, email, pwd, pwdConfirm;
+		string id, national_id, fname, sname,gender, email, phone, pwd, prgrm;
 
 		// ID Input with duplicate validation
 		bool idValid = false;
 		while (!idValid) {
 			cout << "Student ID: ";
 			cin >> id;
+			if (id == "0") return;
 
-			if (id == "0") return; // To cancel
-
-			bool duplicatefound = false;
+			bool duplicateFound = false;
 			for (const auto& student : students) {
 				if (student.ID == id) {
-					duplicatefound = true;
+					duplicateFound = true;
 					break;
 				}
 			}
-			if (duplicatefound) {
+			if (duplicateFound) {
 				cerr << "Error, ID already exists!\n";
 				cout << "1. Try again\n";
 				cout << "0. Cancel\n";
-				
+
 				int retryChoice;
 				cin >> retryChoice;
-
-				if (retryChoice == 0) return; // if 1, it will continue
+				if (retryChoice == 0) return;
 			}
 			else {
 				idValid = true;
 			}
-
 		}
+
+		// National ID input
+		bool nationalidValid = false;
+		while (!nationalidValid) {
+			cout << "National ID: ";
+			cin >> national_id;
+			if (id == "0") return;
+
+			bool duplicateFound = false;
+			for (const auto& student : students) {
+				if (student.national_id == national_id) {
+					duplicateFound = true;
+					break;
+				}
+			}
+			if (duplicateFound) {
+				cerr << "Error, National ID already exists!\n";
+				cout << "1. Try again\n";
+				cout << "0. Cancel\n";
+
+				int retryChoice;
+				cin >> retryChoice;
+				if (retryChoice == 0) return;
+			}
+			else {
+				nationalidValid = true;
+			}
+		}
+
 
 		// Name Input
 		cout << "First Name: ";
@@ -461,51 +615,101 @@ void addStudent(vector<Student>& students) {
 		cin >> sname;
 		if (sname == "0") return;
 
-		// Email Input with Validation
-		while (true) {
-			cout << "Email: ";
-			cin >> email;
-			if (email == "0") return;
-
-			if (email.find('@') == string::npos || email.find('.') == string::npos) {
-				cout << "Invalid email format! (Must contain @ and .)\n";
-				continue;
+		// Gender Input
+		cout << "Enter Gender (M/F): ";
+		bool validgender = false;
+		while (!validgender) {
+			cin >> gender;
+			if (gender != "M" && gender != "F") {  // Changed || to &&
+				cerr << "Wrong Input:\n";
+				cout << "1. Try again\n";
+				cout << "0. Cancel\n";
+				int retryChoice;
+				cin >> retryChoice;
+				if (retryChoice == 0) return;
 			}
+			else {
+				validgender = true;
+			}
+		}
 
-			// Check for duplicate email
-			bool emailExists = false;
-			for (const auto& s : students) {
-				if (s.email == email) {
-					emailExists = true;
+
+		// Email Input
+		cout << "Email: ";
+		cin >> email;
+		if (email == "0") return;
+
+		// Phone Input
+		while (true) {
+			cout << "Phone Number (11 digits): ";
+			cin >> phone;
+			if (phone == "0") return;
+
+			bool valid = true;
+			// Check if all characters are digits
+			for (char c : phone) {
+				if (!isdigit(c)) {
+					valid = false;
 					break;
 				}
 			}
-			if (!emailExists) break;
-			cout << "!!Email already registered!\n";
+
+			// Check length
+			if (!valid || phone.length() != 11) {
+				cout << " Invalid phone number! Must be exactly 11 digits.\n";
+				cout << "1. Try again\n";
+				cout << "0. Cancel\n";
+
+				int retryChoice;
+				cin >> retryChoice;
+
+				if (retryChoice == 0) return;
+				continue;  // Will restart the phone input loop
+			}
+			break;  // Valid phone number entered
 		}
 
 		// Password Input
-		while (true) {
-			cout << "Password: ";
-			cin >> pwd;
-			if (pwd == "0") return;
-			break;
-		}
+		cout << "Password: ";
+		cin >> pwd;
+		if (pwd == "0") return;
+
+		// Program Input
+		cout << "Program: ";
+		cin >> prgrm;
+		if (prgrm == "0") return;
 
 		// 2. Save to Memory and File
-		students.emplace_back(id, fname, sname, email, pwd);
+		students.emplace_back(
+			id,          // ID
+			national_id, // national_id 
+			gender,      // gender
+			fname,       // first_name
+			sname,       // second_name
+			email,       // email
+			phone,       // phone
+			pwd,         // password
+			prgrm		// program
+		);
 
 		ofstream file("students.csv", ios::app);
 		if (file.is_open()) {
-			if (file.tellp() == 0) {  // If empty file
-				file << "ID,FirstName,LastName,Email,Password\n";
+			if (file.tellp() == 0) {
+				file << "ID,NationalID,Gender,FirstName,LastName,Email,Phone,Password,Courses\n";
 			}
-			file << id << "," << fname << "," << sname << ","
-				<< email << "," << pwd << "\n";
-			cout << " --> Student added successfully!\n";
+			file << id << ","
+				<< national_id << ","
+				<< gender << ","
+				<< fname << ","
+				<< sname << ","
+				<< email << ","
+				<< phone << ","
+				<< pwd << "," // Empty courses for new student
+				<< prgrm << ",\n";
+			cout << "Student added successfully!\n";
 		}
 		else {
-			cerr << "!!Error saving to file! Student added to current session only.\n";
+			cerr << "Error saving to file! Student added to current session only.\n";
 		}
 		file.close();
 
@@ -517,4 +721,273 @@ void addStudent(vector<Student>& students) {
 		cin >> choice;
 		if (choice == 0) break;
 	}
+}
+
+bool deleteStudent(Student& student, vector<Student>& students) {
+	cout << "\nCONFRIM DELETION OF: \n";
+	student.display();
+	cout << "\n!!This cannot be undone. Proceed?(1-Yes, 2-No)";
+
+	int confirm;
+	cin >> confirm;
+
+	if (confirm == 1) {
+		students.erase(remove_if(students.begin(), students.end(),
+			[&](const Student& s) { return s.ID == student.ID; }),
+			students.end());
+
+		saveStudentsToFile(students, "students.csv");
+		cout << "Student deleted successfully!\n";
+		return true;
+	}
+	return false;
+}
+
+void modifyStudent(Student& student, vector<Student>& students) {
+	while (true) {
+		cout << "\n--- Modify Student " << student.ID << " ---\n";
+		cout << "Current Information:\n";
+		student.display();
+
+		cout << "\nSelect field to modify:\n";
+		cout << "1. National ID\n";
+		cout << "2. Gender\n";
+		cout << "3. First Name\n";
+		cout << "4. Last Name\n";
+		cout << "5. Email\n";
+		cout << "6. Phone\n";
+		cout << "7. Password\n";
+		cout << "8. Program\n";
+		cout << "9. Save Changes\n";
+		cout << "0. Cancel Without Saving\n";
+		cout << "Choice: ";
+
+		int choice;
+		cin >> choice;
+		cin.ignore(); // Clear newline
+
+		if (choice == 0) {
+			cout << "Modification cancelled.\n";
+			return;
+		}
+		if (choice == 9) break;
+
+		string newValue;
+		cout << "Current: ";
+		switch (choice) {
+		case 1: cout << student.national_id; break;
+		case 2: cout << student.gender; break;
+		case 3: cout << student.first_name; break;
+		case 4: cout << student.second_name; break;
+		case 5: cout << student.email; break;
+		case 6: cout << student.phone; break;
+		case 7: cout << student.password; break;
+		case 8: cout << student.program; break;
+		default: break;
+		}
+		cout << "\nEnter new value: ";
+		getline(cin, newValue);
+
+		// Validate and update field
+		bool valid = true;
+		switch (choice) {
+		case 1: // National ID
+			student.national_id = newValue;
+			break;
+
+		case 2: // Gender
+			if (newValue == "M" || newValue == "F") {
+				student.gender = newValue;
+			}
+			else {
+				cout << "Invalid gender! Use M/F\n";
+				valid = false;
+			}
+			break;
+
+		case 3: // First Name
+			student.first_name = newValue;
+			break;
+
+		case 4: // Last Name
+			student.second_name = newValue;
+			break;
+
+		case 5: // Email
+			if (newValue.find("@eng.asu.edu.eg") != string::npos) {
+				// Check for duplicate email
+				bool emailExists = false;
+				for (const auto& s : students) {
+					if (s.email == newValue && s.ID != student.ID) {
+						emailExists = true;
+						break;
+					}
+				}
+				if (!emailExists) {
+					student.email = newValue;
+				}
+				else {
+					cout << "Email already in use by another student!\n";
+					valid = false;
+				}
+			}
+			else {
+				cout << "Email must end with @eng.asu.edu.eg\n";
+				valid = false;
+			}
+			break;
+
+		case 6: // Phone
+			if (newValue.length() == 11 &&
+				all_of(newValue.begin(), newValue.end(), ::isdigit)) {
+				student.phone = newValue;
+			}
+			else {
+				cout << "Phone must be 11 digits\n";
+				valid = false;
+			}
+			break;
+
+		case 7: // Password
+			student.password = newValue;
+			break;
+		case 8:
+			student.program = newValue;
+			break;
+
+		default:
+			cout << "Invalid choice!\n";
+			valid = false;
+		}
+
+		if (valid) {
+			cout << "Field updated successfully!\n";
+		}
+		else {
+			cout << "Field not updated. Please try again.\n";
+		}
+	}
+
+	// Save changes to file
+	saveStudentsToFile(students, "students.csv");
+	cout << "All changes saved to file!\n";
+}
+
+void saveStudentsToFile(vector<Student>& students, const string& filename) {
+	ofstream file(filename);
+	if (file.is_open()) {
+		// Write header
+		file << "ID,NationalID,Gender,FirstName,LastName,Email,Phone,Password,Courses\n";
+
+		for (const auto& s : students) {
+			// Write basic student info
+			file << s.ID << ","
+				<< s.national_id << ","
+				<< s.gender << ","
+				<< s.first_name << ","
+				<< s.second_name << ","
+				<< s.email << ","
+				<< s.phone << ","
+				<< s.password << ","
+				<< s.program << ",";
+
+			// Write courses in format: code:name:gpa:credits;code:name:gpa:credits
+			for (size_t i = 0; i < s.courses.size(); i++) {
+				const auto& course = s.courses[i];
+				file << course.courseCode << ":"
+					<< course.courseName << ":"
+					<< course.gpa << ":"
+					<< course.creditHours;
+
+				if (i != s.courses.size() - 1) {
+					file << ";";
+				}
+			}
+			file << "\n";
+		}
+	}
+	else {
+		cerr << "Error saving changes to file!\n";
+	}
+}
+
+void addCourseToStudent(Student& student, vector<Student>& students, const string& filename) {
+	Course newCourse;
+	cout << "Enter course code: ";
+	cin >> newCourse.courseCode;
+	cout << "Enter course name: ";
+	cin.ignore();
+	getline(cin, newCourse.courseName);
+	// Validate gpa input
+	while (true) {
+		cout << "Enter GPA (0.0-4.0): ";
+		cin >> newCourse.gpa;
+		if (newCourse.gpa >= 0.0 && newCourse.gpa <= 4.0) {
+			break;
+		}
+		cout << "Invalid GPA! Must be between 0.0 and 4.0\n";
+	}
+	// Validate credit hours input
+	while (true) {
+		cout << "Enter credit hours: ";
+		cin >> newCourse.creditHours;
+		if (newCourse.creditHours > 0) {
+			break;
+		}
+		cout << "Invalid input, credit hours must be positive.";
+	}
+
+	student.courses.push_back(newCourse);
+	cout << "Course added successfully!\n";
+
+	// Save the changes immediately
+	saveStudentsToFile(students, filename);
+}
+
+void manageCourses(Student& student, vector<Student>& students, const string& filename) {
+	while (true) {
+		cout << "\nCOURSE MANAGEMENT: " << student.first_name << "\n";
+		student.display();
+		cout << "\n1. Add Course\n"
+			<< "2. Remove Course\n"
+			<< "3. Back\n"
+			<< "Choice: ";
+
+		int choice;
+		cin >> choice;
+
+		if (choice == 1) {
+			addCourseToStudent(student, students, filename);
+		}
+		else if (choice == 2) {
+			// You could add a removeCourse function here
+			cout << "Remove course functionality would go here\n";
+		}
+		else if (choice == 3) {
+			break;
+		}
+		else {
+			cout << "Invalid choice!\n";
+		}
+	}
+}
+
+void viewStudentCourses(Student& student) {
+	cout << "\n--- YOUR COURSES ---\n";
+	if (student.courses.empty()) {
+		cout << "You are not enrolled in any courses.\n";
+		return;
+	}
+
+	cout << "Course Code\tCourse Name\t\tGPA\tCredit Hours\n";
+	cout << "----------------------------------------------------\n";
+	for (const auto& course : student.courses) {
+		cout << course.courseCode << "\t\t"
+			<< course.courseName << "\t\t"
+			<< course.gpa << "\t"
+			<< course.creditHours << "\n";
+	}
+	cout << "----------------------------------------------------\n";
+	cout << "Total Courses: " << student.courses.size() << "\n";
+	cout << "Overall GPA: " << student.calculateOverallGPA() << "\n";
 }
