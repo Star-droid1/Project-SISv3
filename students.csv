@@ -1,2 +1,2 @@
-ID,NationalID,Gender,FirstName,LastName,Email,Phone,Password,Courses
+ID,NationalID,Gender,FirstName,LastName,Email,Phone,Password,Program,Courses
 24P0430,30605210100559,M,Mohamed,Adel,24P0430@eng.asu.edu.eg,01009772757,closedDoor1,MCTA,CSE141:Introduction To Programming:2:3;PHM122:Electricity and magnetism:2:3
